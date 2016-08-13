@@ -1,7 +1,9 @@
 package org.jsoup.nodes;
 
+import org.jsoup.SerializationException;
 import org.jsoup.helper.Validate;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -22,14 +24,14 @@ public class Attribute implements Map.Entry<String, String>, Cloneable  {
 
     /**
      * Create a new attribute from unencoded (raw) key and value.
-     * @param key attribute key
+     * @param key attribute key; case is preserved.
      * @param value attribute value
      * @see #createFromEncoded
      */
     public Attribute(String key, String value) {
         Validate.notEmpty(key);
         Validate.notNull(value);
-        this.key = key.trim().toLowerCase();
+        this.key = key.trim();
         this.value = value;
     }
 
@@ -42,12 +44,12 @@ public class Attribute implements Map.Entry<String, String>, Cloneable  {
     }
 
     /**
-     Set the attribute key. Gets normalised as per the constructor method.
+     Set the attribute key; case is preserved.
      @param key the new key; must not be null
      */
     public void setKey(String key) {
         Validate.notEmpty(key);
-        this.key = key.trim().toLowerCase();
+        this.key = key.trim();
     }
 
     /**
@@ -75,11 +77,16 @@ public class Attribute implements Map.Entry<String, String>, Cloneable  {
      */
     public String html() {
         StringBuilder accum = new StringBuilder();
-        html(accum, (new Document("")).outputSettings());
+        
+        try {
+        	html(accum, (new Document("")).outputSettings());
+        } catch(IOException exception) {
+        	throw new SerializationException(exception);
+        }
         return accum.toString();
     }
     
-    protected void html(StringBuilder accum, Document.OutputSettings out) {
+    protected void html(Appendable accum, Document.OutputSettings out) throws IOException {
         accum.append(key);
         if (!shouldCollapseAttribute(out)) {
             accum.append("=\"");

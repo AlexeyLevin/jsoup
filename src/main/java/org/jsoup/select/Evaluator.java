@@ -42,7 +42,29 @@ public abstract class Evaluator {
 
         @Override
         public boolean matches(Element root, Element element) {
-            return (element.tagName().equals(tagName));
+            return (element.tagName().equalsIgnoreCase(tagName));
+        }
+
+        @Override
+        public String toString() {
+            return String.format("%s", tagName);
+        }
+    }
+
+
+    /**
+     * Evaluator for tag name that ends with
+     */
+    public static final class TagEndsWith extends Evaluator {
+        private String tagName;
+
+        public TagEndsWith(String tagName) {
+            this.tagName = tagName;
+        }
+
+        @Override
+        public boolean matches(Element root, Element element) {
+            return (element.tagName().endsWith(tagName));
         }
 
         @Override
@@ -124,14 +146,15 @@ public abstract class Evaluator {
         private String keyPrefix;
 
         public AttributeStarting(String keyPrefix) {
-            this.keyPrefix = keyPrefix;
+            Validate.notEmpty(keyPrefix);
+            this.keyPrefix = keyPrefix.toLowerCase();
         }
 
         @Override
         public boolean matches(Element root, Element element) {
             List<org.jsoup.nodes.Attribute> values = element.attributes().asList();
             for (org.jsoup.nodes.Attribute attribute : values) {
-                if (attribute.getKey().startsWith(keyPrefix))
+                if (attribute.getKey().toLowerCase().startsWith(keyPrefix))
                     return true;
             }
             return false;
@@ -280,7 +303,8 @@ public abstract class Evaluator {
             Validate.notEmpty(value);
 
             this.key = key.trim().toLowerCase();
-            if (value.startsWith("\"") && value.endsWith("\"")) {
+            if (value.startsWith("\"") && value.endsWith("\"")
+                    || value.startsWith("'") && value.endsWith("'")) {
                 value = value.substring(1, value.length()-1);
             }
             this.value = value.trim().toLowerCase();
@@ -490,10 +514,10 @@ public abstract class Evaluator {
 		protected int calculatePosition(Element root, Element element) {
 			int pos = 0;
         	Elements family = element.parent().children();
-        	for (int i = 0; i < family.size(); i++) {
-        		if (family.get(i).tag().equals(element.tag())) pos++;
-        		if (family.get(i) == element) break;
-        	}
+            for (Element el : family) {
+                if (el.tag().equals(element.tag())) pos++;
+                if (el == element) break;
+            }
 			return pos;
 		}
 
@@ -578,9 +602,9 @@ public abstract class Evaluator {
 			
 			int pos = 0;
         	Elements family = p.children();
-        	for (int i = 0; i < family.size(); i++) {
-        		if (family.get(i).tag().equals(element.tag())) pos++;
-        	}
+            for (Element el : family) {
+                if (el.tag().equals(element.tag())) pos++;
+            }
         	return pos == 1;
 		}
     	@Override
@@ -593,10 +617,9 @@ public abstract class Evaluator {
 		@Override
 		public boolean matches(Element root, Element element) {
         	List<Node> family = element.childNodes();
-        	for (int i = 0; i < family.size(); i++) {
-        		Node n = family.get(i);
-        		if (!(n instanceof Comment || n instanceof XmlDeclaration || n instanceof DocumentType)) return false; 
-        	}
+            for (Node n : family) {
+                if (!(n instanceof Comment || n instanceof XmlDeclaration || n instanceof DocumentType)) return false;
+            }
         	return true;
 		}
     	@Override

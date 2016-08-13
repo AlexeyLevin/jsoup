@@ -1,5 +1,6 @@
 package org.jsoup.parser;
 
+import org.jsoup.Jsoup;
 import org.jsoup.helper.Validate;
 import org.jsoup.nodes.*;
 
@@ -13,9 +14,17 @@ import java.util.List;
  * @author Jonathan Hedley
  */
 public class XmlTreeBuilder extends TreeBuilder {
+    ParseSettings defaultSettings() {
+        return ParseSettings.preserveCase;
+    }
+
+    Document parse(String input, String baseUri) {
+        return parse(input, baseUri, ParseErrorList.noTracking(), ParseSettings.preserveCase);
+    }
+
     @Override
-    protected void initialiseParse(String input, String baseUri, ParseErrorList errors) {
-        super.initialiseParse(input, baseUri, errors);
+    protected void initialiseParse(String input, String baseUri, ParseErrorList errors, ParseSettings settings) {
+        super.initialiseParse(input, baseUri, errors, settings);
         stack.add(doc); // place the document onto the stack. differs from HtmlTreeBuilder (not on stack)
         doc.outputSettings().syntax(Document.OutputSettings.Syntax.xml);
     }
@@ -52,9 +61,9 @@ public class XmlTreeBuilder extends TreeBuilder {
     }
 
     Element insert(Token.StartTag startTag) {
-        Tag tag = Tag.valueOf(startTag.name());
+        Tag tag = Tag.valueOf(startTag.name(), settings);
         // todo: wonder if for xml parsing, should treat all tags as unknown? because it's not html.
-        Element el = new Element(tag, baseUri, startTag.attributes);
+        Element el = new Element(tag, baseUri, settings.normalizeAttributes(startTag.attributes));
         insertNode(el);
         if (startTag.isSelfClosing()) {
             tokeniser.acknowledgeSelfClosingFlag();
@@ -70,10 +79,13 @@ public class XmlTreeBuilder extends TreeBuilder {
         Comment comment = new Comment(commentToken.getData(), baseUri);
         Node insert = comment;
         if (commentToken.bogus) { // xml declarations are emitted as bogus comments (which is right for html, but not xml)
+            // so we do a bit of a hack and parse the data as an element to pull the attributes out
             String data = comment.getData();
             if (data.length() > 1 && (data.startsWith("!") || data.startsWith("?"))) {
-                String declaration = data.substring(1);
-                insert = new XmlDeclaration(declaration, comment.baseUri(), data.startsWith("!"));
+                Document doc = Jsoup.parse("<" + data.substring(1, data.length() -1) + ">", baseUri, Parser.xmlParser());
+                Element el = doc.child(0);
+                insert = new XmlDeclaration(settings.normalizeTag(el.tagName()), comment.baseUri(), data.startsWith("!"));
+                insert.attributes().addAll(el.attributes());
             }
         }
         insertNode(insert);
@@ -85,7 +97,7 @@ public class XmlTreeBuilder extends TreeBuilder {
     }
 
     void insert(Token.Doctype d) {
-        DocumentType doctypeNode = new DocumentType(d.getName(), d.getPublicIdentifier(), d.getSystemIdentifier(), baseUri);
+        DocumentType doctypeNode = new DocumentType(settings.normalizeTag(d.getName()), d.getPublicIdentifier(), d.getSystemIdentifier(), baseUri);
         insertNode(doctypeNode);
     }
 
@@ -117,8 +129,8 @@ public class XmlTreeBuilder extends TreeBuilder {
         }
     }
 
-    List<Node> parseFragment(String inputFragment, String baseUri, ParseErrorList errors) {
-        initialiseParse(inputFragment, baseUri, errors);
+    List<Node> parseFragment(String inputFragment, String baseUri, ParseErrorList errors, ParseSettings settings) {
+        initialiseParse(inputFragment, baseUri, errors, settings);
         runParser();
         return doc.childNodes();
     }

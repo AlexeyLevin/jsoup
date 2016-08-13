@@ -17,12 +17,15 @@ import org.junit.Test;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
+import java.net.Proxy;
 import java.net.URL;
 import java.util.Map;
 
-import static org.hamcrest.core.Is.is;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 /**
  Tests the URL connection. Not enabled by default, so tests don't require network connection.
@@ -33,10 +36,11 @@ public class UrlConnectTest {
     private static final String WEBSITE_WITH_INVALID_CERTIFICATE = "https://certs.cac.washington.edu/CAtest/";
     private static final String WEBSITE_WITH_SNI = "https://jsoup.org/";
     private static String echoURL = "http://direct.infohound.net/tools/q.pl";
+    private static String browserUa = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2623.112 Safari/537.36";
 
     @Test
     public void fetchURl() throws IOException {
-        String url = "http://jsoup.org"; // no trailing / to force redir
+        String url = "https://jsoup.org"; // no trailing / to force redir
         Document doc = Jsoup.parse(new URL(url), 10*1000);
         assertTrue(doc.title().contains("jsoup"));
     }
@@ -91,7 +95,7 @@ public class UrlConnectTest {
 
     @Test
     public void ignoresContentTypeIfSoConfigured() throws IOException {
-        Document doc = Jsoup.connect("http://jsoup.org/rez/osi_logo.png").ignoreContentType(true).get();
+        Document doc = Jsoup.connect("https://jsoup.org/rez/osi_logo.png").ignoreContentType(true).get();
         assertEquals("", doc.title()); // this will cause an ugly parse tree
     }
 
@@ -107,6 +111,32 @@ public class UrlConnectTest {
         assertEquals("auth=token", ihVal("HTTP_COOKIE", doc));
         assertEquals("度一下", ihVal("百", doc));
         assertEquals("Jsoup, Jonathan", ihVal("uname", doc));
+    }
+
+    @Test
+    public void sendsRequestBody() throws IOException {
+        final String body = "{key:value}";
+        Document doc = Jsoup.connect(echoURL)
+            .requestBody(body)
+            .header("Content-Type", "text/plain")
+            .userAgent(browserUa)
+            .post();
+        assertEquals("POST", ihVal("REQUEST_METHOD", doc));
+        assertEquals(body, ihVal("keywords", doc));
+    }
+
+    @Test
+    public void sendsRequestBodyWithUrlParams() throws IOException {
+        final String body = "{key:value}";
+        Document doc = Jsoup.connect(echoURL)
+            .requestBody(body)
+            .data("uname", "Jsoup", "uname", "Jonathan", "百", "度一下")
+            .header("Content-Type", "text/plain") // todo - if user sets content-type, we should append postcharset
+            .userAgent(browserUa)
+            .post();
+        assertEquals("POST", ihVal("REQUEST_METHOD", doc));
+        assertEquals("uname=Jsoup&uname=Jonathan&%E7%99%BE=%E5%BA%A6%E4%B8%80%E4%B8%8B", ihVal("QUERY_STRING", doc));
+        assertEquals(body, ihVal("POSTDATA", doc));
     }
 
     @Test
@@ -154,7 +184,7 @@ public class UrlConnectTest {
         Connection con = Jsoup.connect("http://direct.infohound.net/tools/307.pl"); // http://jsoup.org
         Document doc = con.get();
         assertTrue(doc.title().contains("jsoup"));
-        assertEquals("http://jsoup.org", con.response().url().toString());
+        assertEquals("https://jsoup.org", con.response().url().toString());
     }
 
     @Test
@@ -163,7 +193,7 @@ public class UrlConnectTest {
                 .data("Argument", "Riposte")
                 .method(Connection.Method.POST);
         Connection.Response res = con.execute();
-        assertEquals("http://jsoup.org", res.url().toExternalForm());
+        assertEquals("https://jsoup.org", res.url().toExternalForm());
         assertEquals(Connection.Method.GET, res.method());
     }
 
@@ -251,7 +281,7 @@ public class UrlConnectTest {
     }
 
     @Test
-    public void ignores500NoWithContentExceptionIfSoConfigured() throws IOException {
+    public void ignores500WithNoContentExceptionIfSoConfigured() throws IOException {
         Connection con = Jsoup.connect("http://direct.infohound.net/tools/500-no-content.pl").ignoreHttpErrors(true);
         Connection.Response res = con.execute();
         Document doc = res.parse();
@@ -260,7 +290,7 @@ public class UrlConnectTest {
     }
 
     @Test
-    public void ignores200NoWithContentExceptionIfSoConfigured() throws IOException {
+    public void ignores200WithNoContentExceptionIfSoConfigured() throws IOException {
         Connection con = Jsoup.connect("http://direct.infohound.net/tools/200-no-content.pl").ignoreHttpErrors(true);
         Connection.Response res = con.execute();
         Document doc = res.parse();
@@ -269,11 +299,29 @@ public class UrlConnectTest {
     }
 
     @Test
+    public void handles200WithNoContent() throws IOException {
+        Connection con = Jsoup
+            .connect("http://direct.infohound.net/tools/200-no-content.pl")
+            .userAgent(browserUa);
+        Connection.Response res = con.execute();
+        Document doc = res.parse();
+        assertEquals(200, res.statusCode());
+
+        con = Jsoup
+            .connect("http://direct.infohound.net/tools/200-no-content.pl")
+            .parser(Parser.xmlParser())
+            .userAgent(browserUa);
+        res = con.execute();
+        doc = res.parse();
+        assertEquals(200, res.statusCode());
+    }
+
+    @Test
     public void doesntRedirectIfSoConfigured() throws IOException {
         Connection con = Jsoup.connect("http://direct.infohound.net/tools/302.pl").followRedirects(false);
         Connection.Response res = con.execute();
         assertEquals(302, res.statusCode());
-        assertEquals("http://jsoup.org", res.header("Location"));
+        assertEquals("https://jsoup.org", res.header("Location"));
     }
 
     @Test
@@ -389,7 +437,7 @@ public class UrlConnectTest {
     public void testSNIPass() throws Exception {
         String url = WEBSITE_WITH_SNI;
         Connection.Response defaultRes = Jsoup.connect(url).validateTLSCertificates(false).execute();
-        assertThat(defaultRes.statusCode(), is(200));
+        assertEquals(defaultRes.statusCode(), 200);
     }
 
     /**
@@ -403,7 +451,7 @@ public class UrlConnectTest {
     public void testUnsafePass() throws Exception {
         String url = WEBSITE_WITH_INVALID_CERTIFICATE;
         Connection.Response defaultRes = Jsoup.connect(url).validateTLSCertificates(false).execute();
-        assertThat(defaultRes.statusCode(), is(200));
+        assertEquals(defaultRes.statusCode(), 200);
     }
 
     @Test
@@ -464,14 +512,10 @@ public class UrlConnectTest {
 
         File uploadFile = ParseTest.getFile("/htmltests/google-ipod.html");
         FileInputStream stream = new FileInputStream(uploadFile);
-
-        // todo: need to add a better way to get an existing data field
-        for (Connection.KeyVal keyVal : post.request().data()) {
-            if (keyVal.key().equals("_file")) {
-                keyVal.value("check.html");
-                keyVal.inputStream(stream);
-            }
-        }
+        
+        Connection.KeyVal fileData = post.data("_file");
+        fileData.value("check.html");
+        fileData.inputStream(stream);
 
         Connection.Response res;
         try {
@@ -491,22 +535,24 @@ public class UrlConnectTest {
     public void postJpeg() throws IOException {
         File thumb = ParseTest.getFile("/htmltests/thumb.jpg");
         Document result = Jsoup
-                .connect("http://regex.info/exif.cgi")
-                .data("f", thumb.getName(), new FileInputStream(thumb))
-                .post();
+            .connect("http://regex.info/exif.cgi")
+            .data("f", thumb.getName(), new FileInputStream(thumb))
+            .userAgent(browserUa)
+            .post();
 
         assertEquals("Baseline DCT, Huffman coding", result.select("td:contains(Process) + td").text());
+        assertEquals("1052 bytes 30 × 30", result.select("td:contains(Size) + td").text());
     }
 
     @Test
     public void handles201Created() throws IOException {
         Document doc = Jsoup.connect("http://direct.infohound.net/tools/201.pl").get(); // 201, location=jsoup
-        assertEquals("http://jsoup.org", doc.location());
+        assertEquals("https://jsoup.org", doc.location());
     }
 
     @Test
     public void fetchToW3c() throws IOException {
-        String url = "http://jsoup.org";
+        String url = "https://jsoup.org";
         Document doc = Jsoup.connect(url).get();
 
         W3CDom dom = new W3CDom();
@@ -558,5 +604,61 @@ public class UrlConnectTest {
         assertEquals("", response.body()); // head ought to have no body
         Document doc = response.parse();
         assertEquals("", doc.text());
+    }
+
+
+    /*
+     Proxy tests. Assumes local proxy running on 8888, without system propery set (so that specifying it is required).
+     */
+
+    @Test
+    public void fetchViaHttpProxy() throws IOException {
+        String url = "https://jsoup.org";
+        Proxy proxy = new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("localhost", 8888));
+        Document doc = Jsoup.connect(url).proxy(proxy).get();
+        assertTrue(doc.title().contains("jsoup"));
+    }
+
+    @Test
+    public void fetchViaHttpProxySetByArgument() throws IOException {
+        String url = "https://jsoup.org";
+        Document doc = Jsoup.connect(url).proxy("localhost", 8888).get();
+        assertTrue(doc.title().contains("jsoup"));
+    }
+
+    @Test
+    public void invalidProxyFails() throws IOException {
+        boolean caught = false;
+        String url = "https://jsoup.org";
+        try {
+            Document doc = Jsoup.connect(url).proxy("localhost", 8889).get();
+        } catch (IOException e) {
+            caught = e instanceof ConnectException;
+        }
+        assertTrue(caught);
+    }
+
+    @Test
+    public void proxyGetAndSet() throws IOException {
+        String url = "https://jsoup.org";
+        Proxy proxy = new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved("localhost", 8889)); // invalid
+        final Connection con = Jsoup.connect(url).proxy(proxy);
+
+        assert con.request().proxy() == proxy;
+        con.request().proxy(null); // disable
+        Document doc = con.get();
+        assertTrue(doc.title().contains("jsoup")); // would fail if actually went via proxy
+    }
+
+    @Test
+    public void throwsIfRequestBodyForGet() throws IOException {
+        boolean caught = false;
+        String url = "https://jsoup.org";
+        try {
+            Document doc = Jsoup.connect(url).requestBody("fail").get();
+        } catch (IllegalArgumentException e) {
+            caught = true;
+        }
+        assertTrue(caught);
     }
 }

@@ -68,8 +68,10 @@ abstract class Token {
 
     static abstract class Tag extends Token {
         protected String tagName;
+        protected String normalName; // lc version of tag name, for case insensitive tree build
         private String pendingAttributeName; // attribute names are generally caught in one hop, not accumulated
         private StringBuilder pendingAttributeValue = new StringBuilder(); // but values are accumulated, from e.g. & in hrefs
+        private String pendingAttributeValueS; // try to get attr vals in one shot, vs Builder
         private boolean hasEmptyAttributeValue = false; // distinguish boolean attribute from empty string value
         private boolean hasPendingAttributeValue = false;
         boolean selfClosing = false;
@@ -78,8 +80,10 @@ abstract class Token {
         @Override
         Tag reset() {
             tagName = null;
+            normalName = null;
             pendingAttributeName = null;
             reset(pendingAttributeValue);
+            pendingAttributeValueS = null;
             hasEmptyAttributeValue = false;
             hasPendingAttributeValue = false;
             selfClosing = false;
@@ -94,7 +98,8 @@ abstract class Token {
             if (pendingAttributeName != null) {
                 Attribute attribute;
                 if (hasPendingAttributeValue)
-                    attribute = new Attribute(pendingAttributeName, pendingAttributeValue.toString());
+                    attribute = new Attribute(pendingAttributeName,
+                        pendingAttributeValue.length() > 0 ? pendingAttributeValue.toString() : pendingAttributeValueS);
                 else if (hasEmptyAttributeValue)
                     attribute = new Attribute(pendingAttributeName, "");
                 else
@@ -105,6 +110,7 @@ abstract class Token {
             hasEmptyAttributeValue = false;
             hasPendingAttributeValue = false;
             reset(pendingAttributeValue);
+            pendingAttributeValueS = null;
         }
 
         final void finaliseTag() {
@@ -115,13 +121,18 @@ abstract class Token {
             }
         }
 
-        final String name() {
+        final String name() { // preserves case, for input into Tag.valueOf (which may drop case)
             Validate.isFalse(tagName == null || tagName.length() == 0);
             return tagName;
         }
 
+        final String normalName() { // loses case, used in tree building for working out where in tree it should go
+            return normalName;
+        }
+
         final Tag name(String name) {
             tagName = name;
+            normalName = name.toLowerCase();
             return this;
         }
 
@@ -137,6 +148,7 @@ abstract class Token {
         // these appenders are rarely hit in not null state-- caused by null chars.
         final void appendTagName(String append) {
             tagName = tagName == null ? append : tagName.concat(append);
+            normalName = tagName.toLowerCase();
         }
 
         final void appendTagName(char append) {
@@ -153,7 +165,11 @@ abstract class Token {
 
         final void appendAttributeValue(String append) {
             ensureAttributeValue();
-            pendingAttributeValue.append(append);
+            if (pendingAttributeValue.length() == 0) {
+                pendingAttributeValueS = append;
+            } else {
+                pendingAttributeValue.append(append);
+            }
         }
 
         final void appendAttributeValue(char append) {
@@ -172,6 +188,11 @@ abstract class Token {
 
         private void ensureAttributeValue() {
             hasPendingAttributeValue = true;
+            // if on second hit, we'll need to move to the builder
+            if (pendingAttributeValueS != null) {
+                pendingAttributeValue.append(pendingAttributeValueS);
+                pendingAttributeValueS = null;
+            }
         }
     }
 
@@ -193,6 +214,7 @@ abstract class Token {
         StartTag nameAttr(String name, Attributes attributes) {
             this.tagName = name;
             this.attributes = attributes;
+            normalName = tagName.toLowerCase();
             return this;
         }
 

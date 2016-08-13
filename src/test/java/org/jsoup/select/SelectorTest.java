@@ -14,7 +14,8 @@ import static org.junit.Assert.*;
  */
 public class SelectorTest {
     @Test public void testByTag() {
-        Elements els = Jsoup.parse("<div id=1><div id=2><p>Hello</p></div></div><div id=3>").select("div");
+        // should be case insensitive
+        Elements els = Jsoup.parse("<div id=1><div id=2><p>Hello</p></div></div><DIV id=3>").select("DIV");
         assertEquals(3, els.size());
         assertEquals("1", els.get(0).id());
         assertEquals("2", els.get(1).id());
@@ -35,7 +36,7 @@ public class SelectorTest {
     }
 
     @Test public void testByClass() {
-        Elements els = Jsoup.parse("<p id=0 class='one two'><p id=1 class='one'><p id=2 class='two'>").select("p.one");
+        Elements els = Jsoup.parse("<p id=0 class='ONE two'><p id=1 class='one'><p id=2 class='two'>").select("P.One");
         assertEquals(2, els.size());
         assertEquals("0", els.get(0).id());
         assertEquals("1", els.get(1).id());
@@ -55,7 +56,7 @@ public class SelectorTest {
         Elements withTitle = doc.select("[title]");
         assertEquals(4, withTitle.size());
 
-        Elements foo = doc.select("[title=foo]");
+        Elements foo = doc.select("[TITLE=foo]");
         assertEquals(1, foo.size());
 
         Elements foo2 = doc.select("[title=\"foo\"]");
@@ -104,6 +105,27 @@ public class SelectorTest {
         assertEquals("2", byTagAttr.last().id());
 
         Elements byContains = doc.select("abc|def:contains(e)");
+        assertEquals(2, byContains.size());
+        assertEquals("1", byContains.first().id());
+        assertEquals("2", byContains.last().id());
+    }
+
+    @Test public void testWildcardNamespacedTag() {
+        Document doc = Jsoup.parse("<div><abc:def id=1>Hello</abc:def></div> <abc:def class=bold id=2>There</abc:def>");
+        Elements byTag = doc.select("*|def");
+        assertEquals(2, byTag.size());
+        assertEquals("1", byTag.first().id());
+        assertEquals("2", byTag.last().id());
+
+        Elements byAttr = doc.select(".bold");
+        assertEquals(1, byAttr.size());
+        assertEquals("2", byAttr.last().id());
+
+        Elements byTagAttr = doc.select("*|def.bold");
+        assertEquals(1, byTagAttr.size());
+        assertEquals("2", byTagAttr.last().id());
+
+        Elements byContains = doc.select("*|def:contains(e)");
         assertEquals(2, byContains.size());
         assertEquals("1", byContains.first().id());
         assertEquals("2", byContains.last().id());
@@ -200,7 +222,7 @@ public class SelectorTest {
     @Test public void descendant() {
         String h = "<div class=head><p class=first>Hello</p><p>There</p></div><p>None</p>";
         Document doc = Jsoup.parse(h);
-        Element root = doc.getElementsByClass("head").first();
+        Element root = doc.getElementsByClass("HEAD").first();
         
         Elements els = root.select(".head p");
         assertEquals(2, els.size());
@@ -660,5 +682,14 @@ public class SelectorTest {
 
         Elements subSelect = els.select(":contains(one)");
         assertEquals(2, subSelect.size());
+    }
+
+    @Test public void attributeWithBrackets() {
+        String html = "<div data='End]'>One</div> <div data='[Another)]]'>Two</div>";
+        Document doc = Jsoup.parse(html);
+        assertEquals("One", doc.select("div[data='End]'").first().text());
+        assertEquals("Two", doc.select("div[data='[Another)]]'").first().text());
+        assertEquals("One", doc.select("div[data=\"End]\"").first().text());
+        assertEquals("Two", doc.select("div[data=\"[Another)]]\"").first().text());
     }
 }
